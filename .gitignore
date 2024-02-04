@@ -4,5 +4,9 @@ __pycache__/
 ### python env ###
 .venv/
 
-### dataset
+### dataset ###
 dataset.py
+
+
+### parameter data ###
+*.pth

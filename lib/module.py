@@ -1,10 +1,8 @@
 import numpy as np
+import random
 import torch
 import torch.nn as nn
-from sklearn.model_selection import train_test_split
-from datetime import datetime
-from typing import List, Tuple, Union
-import os
+from typing import List, Tuple
 
 
 def _hex_to_rgb(hex_color:str) -> np.ndarray:
@@ -26,7 +24,7 @@ def _rgb_to_hex(rgb_color: np.ndarray) -> str:
     return "#" + "".join(["{:02x}".format(int(c)) for c in rgb_color])
 
 
-def _get_dataset(dataset: List) -> Tuple[np.ndarray, np.ndarray]:
+def _split_x_y(dataset: List) -> Tuple[np.ndarray, np.ndarray]:
     dataset = np.array(dataset)
     X = np.array([_hex_to_rgb(x) for x in dataset[:, 0]])
     Y = np.array([_hex_to_rgb(y) for y in dataset[:, 1]])
@@ -44,53 +42,81 @@ def _convert_tensor_list(data_list: List[np.ndarray]) -> List[torch.Tensor]:
     return result_list
 
 
-def _model_test(model: nn.Module, test_data: str, y_data:str="no data"):
+def model_test(model: nn.Module, test_data: str, y_data:str="no data"):
     convert_test_data = _convert_tensor(_hex_to_rgb(test_data))
     predict = model(convert_test_data)
     predict_hex = _rgb_to_hex(predict.data.numpy())
     print(f"input data : {test_data}, predict data : {predict_hex}, answer data : {y_data}")
 
 
-def training(input_dataset:List[List[str]], model:nn.Module, epoch:int) -> str:
-    ## data setting
-    X, Y = _get_dataset(input_dataset)
-    result = train_test_split(X, Y, test_size=0.25, random_state=42)
-    (x_train, x_val, y_train, y_val) = _convert_tensor_list(result)
+def get_dataset(input_dataset, train_ratio=0.8, seed=None):
+    if seed is not None:
+        random.seed(seed)
 
-    ## train
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    for ep in range(1, epoch + 1):
-        ## forward pass
-        y_pred_train = model(x_train)
-        y_pred_val = model(x_val)
+    X, Y = _split_x_y(input_dataset)
+    random_list = [x for x in range(len(X))]
+    random.shuffle(random_list)
+    cut_index = int(len(X)*train_ratio)
+    x_shape, y_shape = X.shape[1], Y.shape[1]
 
-        ## calculate loss
-        loss_train = criterion(y_pred_train, y_train)
-        loss_val = criterion(y_pred_val, y_val)
-        optimizer.zero_grad()
-        loss_train.backward()
-        optimizer.step()
+    train_index_list, valid_index_list = random_list[:cut_index], random_list[cut_index:]
+    x_train = np.zeros((len(train_index_list), x_shape), dtype=np.uint8)
+    x_valid = np.zeros((len(valid_index_list), x_shape), dtype=np.uint8)
+    y_train = np.zeros((len(train_index_list), y_shape), dtype=np.uint8)
+    y_valid = np.zeros((len(valid_index_list), y_shape), dtype=np.uint8)
 
-        if ep % 100 == 0:
-            print(f"Epoch {ep}, Training loss : {loss_train.item()}, Validation Loss: {loss_val.item()}")
+    for i, train_index in enumerate(train_index_list):
+        x_train[i], y_train[i] = X[train_index], Y[train_index]
+    for i, valid_index in enumerate(valid_index_list):
+        x_valid[i], y_valid[i] = X[valid_index], Y[valid_index]
 
-    ## Model save
-    _d = datetime.now().strftime("%Y%m%d%H%M%S")
-    save_file_name = f"ColorNetV1_{_d}_val{loss_val.item():.2f}.pth"
-    torch.save(model.state_dict(), save_file_name)
-    print("train DONE")
-    return save_file_name
+    return _convert_tensor_list([x_train, x_valid, y_train, y_valid])
 
 
-def running(model:nn.Module, pth_file: str, data_list: List[str], y_data_list: Union[List[str], None]=None):
-    if not os.path.exists(pth_file):
-        print(f"{pth_file} is not exist.")
-        return False
-    if y_data_list is None:
-        y_data_list = [None for x in range(len(data_list))]
+# def training(input_dataset:List[List[str]], net, epoch:int) -> str:
+#     ## data setting
+#     x_train, x_valid, y_train, y_valid = _get_dataset(input_dataset)
 
-    model.load_state_dict(torch.load(pth_file))
-    for data, y_data in zip(data_list, y_data_list):
-        _model_test(model, data, y_data)
-    print("run model DONE")
+#     ## model set
+#     model:nn.Module = net()
+
+#     ## train
+#     criterion = nn.MSELoss()
+#     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+#     for ep in range(1, epoch + 1):
+#         ## forward pass
+#         y_pred_train = model(x_train)
+#         y_pred_val = model(x_valid)
+
+#         ## calculate loss
+#         loss_train = criterion(y_pred_train, y_train)
+#         loss_val = criterion(y_pred_val, y_valid)
+#         optimizer.zero_grad()
+#         loss_train.backward()
+#         optimizer.step()
+
+#         if ep % 100 == 0:
+#             print(f"Epoch {ep}, Training loss : {loss_train.item()}, Validation Loss: {loss_val.item()}")
+
+#     ## Model save
+#     _d = datetime.now().strftime("%Y%m%d%H%M%S")
+#     save_file_name = f"{net.__name__}_{_d}_train{loss_train.item():.2f}_val{loss_val.item():.2f}.pth"
+#     torch.save(model.state_dict(), save_file_name)
+#     print("train DONE")
+#     return save_file_name
+
+
+# def running(net, pth_file: str, data_list: List[str], y_data_list: Union[List[str], None]=None):
+#     ## model set
+#     model:nn.Module = net()
+
+#     if not os.path.exists(pth_file):
+#         print(f"{pth_file} is not exist.")
+#         return False
+#     if y_data_list is None:
+#         y_data_list = [None for x in range(len(data_list))]
+
+#     model.load_state_dict(torch.load(pth_file))
+#     for data, y_data in zip(data_list, y_data_list):
+#         _model_test(model, data, y_data)
+#     print("run model DONE")
